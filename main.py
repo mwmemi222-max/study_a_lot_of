@@ -2,7 +2,6 @@ import os
 from fastapi import FastAPI, Request
 import httpx
 
-
 app = FastAPI()
 
 MOBILIFE_API_KEY = os.getenv("MOBILIFE_API_KEY", "ml_6471f90f6c06_6tsbiZSudxwNo7GBWGvq3u9ry4kFXiYIkhiThoi0tG0")
