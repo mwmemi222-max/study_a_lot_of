@@ -27,8 +27,8 @@ def get_current_kst_time() -> str:
     if hour_12 == 0:
         hour_12 = 12
     return f"{ampm} {hour_12}:{now.minute:02d}"
-
-# 단일 아이템 API 요청 전용
+    
+# 단일 아이템 API 요청 전용 (개수 표기 제거)
 async def fetch_single_price(client: httpx.AsyncClient, item_name: str) -> str:
     headers = get_headers()
     try:
@@ -42,8 +42,8 @@ async def fetch_single_price(client: httpx.AsyncClient, item_name: str) -> str:
             if items:
                 target = items[0]
                 min_price = target.get("min_price", 0)
-                count = target.get("count", 0)
-                return f"  :: {item_name}: {min_price:,} 데카 / {count:,}개 남음"
+                # '/ 0개 남음' 부분 제거
+                return f"  :: {item_name}: {min_price:,} 데카"
             else:
                 return f"  :: {item_name}: 정보 없음"
         else:
@@ -51,10 +51,9 @@ async def fetch_single_price(client: httpx.AsyncClient, item_name: str) -> str:
     except Exception:
         return f"  :: {item_name}: 통신 오류"
 
-# 그룹 아이템 병렬(동시) 조회를 통한 속도 최적화
+# 그룹 아이템 병렬(동시) 조회
 async def fetch_group_item_summary(group_title: str, item_list: list) -> str:
     async with httpx.AsyncClient() as client:
-        # 모든 아이템 조회를 동시에 실행하여 5초 타임아웃 방지
         tasks = [fetch_single_price(client, name) for name in item_list]
         summary_results = await asyncio.gather(*tasks)
 
@@ -64,7 +63,7 @@ async def fetch_group_item_summary(group_title: str, item_list: list) -> str:
     return (
         f"[{group_title}]\n"
         f"Data based on 모비라이프 OpenAPI\n\n"
-        f"💰 최저가/등록개수 검색\n"
+        f"💰 최저가 검색\n" # '최저가/등록개수' -> '최저가'로 변경
         f"{lines}\n\n"
         f"🕒 서버 데이터 갱신 시간: {current_time}"
     )
