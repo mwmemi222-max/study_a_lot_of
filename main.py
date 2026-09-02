@@ -1,4 +1,5 @@
 import os
+import asyncio
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Request
@@ -16,11 +17,9 @@ def get_headers():
     }
 
 def clean_item_name(text: str) -> str:
-    # 명령어 / 및 ZZ, /시세 등 정리
     cleaned = text.replace("/시세", "").replace("/", "").replace("ZZ", "").replace("zz", "").strip()
     return cleaned
 
-# 현재 한국 시간(KST)을 "오후 2:53" 형식으로 변환하는 함수
 def get_current_kst_time() -> str:
     now = datetime.now(ZoneInfo("Asia/Seoul"))
     ampm = "오전" if now.hour < 12 else "오후"
@@ -29,7 +28,48 @@ def get_current_kst_time() -> str:
         hour_12 = 12
     return f"{ampm} {hour_12}:{now.minute:02d}"
 
-# 단일 아이템 상세 시세 및 7일 추이 조회
+# 단일 아이템 API 요청 전용
+async def fetch_single_price(client: httpx.AsyncClient, item_name: str) -> str:
+    headers = get_headers()
+    try:
+        price_url = f"{BASE_URL}/market/prices"
+        price_params = {"search": item_name, "limit": 1}
+        resp = await client.get(price_url, headers=headers, params=price_params, timeout=3.0)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            items = data.get("items") or data.get("data") or []
+            if items:
+                target = items[0]
+                min_price = target.get("min_price", 0)
+                count = target.get("count", 0)
+                return f"  :: {item_name}: {min_price:,} 데카 / {count:,}개 남음"
+            else:
+                return f"  :: {item_name}: 정보 없음"
+        else:
+            return f"  :: {item_name}: 조회 실패"
+    except Exception:
+        return f"  :: {item_name}: 통신 오류"
+
+# 그룹 아이템 병렬(동시) 조회를 통한 속도 최적화
+async def fetch_group_item_summary(group_title: str, item_list: list) -> str:
+    async with httpx.AsyncClient() as client:
+        # 모든 아이템 조회를 동시에 실행하여 5초 타임아웃 방지
+        tasks = [fetch_single_price(client, name) for name in item_list]
+        summary_results = await asyncio.gather(*tasks)
+
+    lines = "\n".join(summary_results)
+    current_time = get_current_kst_time()
+
+    return (
+        f"[{group_title}]\n"
+        f"Data based on 모비라이프 OpenAPI\n\n"
+        f"💰 최저가/등록개수 검색\n"
+        f"{lines}\n\n"
+        f"🕒 서버 데이터 갱신 시간: {current_time}"
+    )
+
+# 단일 아이템 상세 시세
 async def fetch_single_item_detail(item_name: str) -> str:
     headers = get_headers()
     target_name = clean_item_name(item_name)
@@ -38,7 +78,7 @@ async def fetch_single_item_detail(item_name: str) -> str:
         try:
             price_url = f"{BASE_URL}/market/prices"
             price_params = {"search": target_name, "limit": 1, "min_count": 1}
-            price_resp = await client.get(price_url, headers=headers, params=price_params)
+            price_resp = await client.get(price_url, headers=headers, params=price_params, timeout=3.0)
             
             if price_resp.status_code == 401:
                 return "⚠️ API 토큰 인증에 실패했습니다."
@@ -62,7 +102,7 @@ async def fetch_single_item_detail(item_name: str) -> str:
             if kind_id:
                 history_url = f"{BASE_URL}/market/prices/history"
                 history_params = {"kind_id": kind_id, "days": 7}
-                history_resp = await client.get(history_url, headers=headers, params=history_params)
+                history_resp = await client.get(history_url, headers=headers, params=history_params, timeout=2.0)
                 
                 if history_resp.status_code == 200:
                     h_data = history_resp.json()
@@ -87,50 +127,12 @@ async def fetch_single_item_detail(item_name: str) -> str:
         except Exception:
             return "⚠️ 서버 통신 중 오류가 발생했습니다."
 
-# 그룹 아이템 커스텀 포맷 출력 함수
-async def fetch_group_item_summary(group_title: str, item_list: list) -> str:
-    headers = get_headers()
-    summary_results = []
-    
-    async with httpx.AsyncClient() as client:
-        for item_name in item_list:
-            try:
-                price_url = f"{BASE_URL}/market/prices"
-                price_params = {"search": item_name, "limit": 1}
-                resp = await client.get(price_url, headers=headers, params=price_params)
-                
-                if resp.status_code == 200:
-                    data = resp.json()
-                    items = data.get("items") or data.get("data") or []
-                    if items:
-                        target = items[0]
-                        min_price = target.get("min_price", 0)
-                        count = target.get("count", 0)
-                        summary_results.append(f"  :: {item_name}: {min_price:,} 데카 / {count:,}개 남음")
-                    else:
-                        summary_results.append(f"  :: {item_name}: 정보 없음")
-                else:
-                    summary_results.append(f"  :: {item_name}: 조회 실패")
-            except Exception:
-                summary_results.append(f"  :: {item_name}: 통신 오류")
-
-    lines = "\n".join(summary_results)
-    current_time = get_current_kst_time()
-
-    return (
-        f"[{group_title}]\n"
-        f"Data based on 모비라이프 OpenAPI\n\n"
-        f"💰 최저가/등록개수 검색\n"
-        f"{lines}\n\n"
-        f"🕒 서버 데이터 갱신 시간: {current_time}"
-    )
-
 @app.post("/api/skill")
 async def kakao_skill(request: Request):
     payload = await request.json()
     raw_utterance = payload.get("userRequest", {}).get("utterance", "").strip()
-
-    # 💡 핵심: 입력한 메시지에 '/'가 포함되어 있지 않다면 스킬을 작동시키지 않음
+    
+    # '/' 명령어가 없는 일상 대화는 무시
     if "/" not in raw_utterance:
         return {
             "version": "2.0",
@@ -138,13 +140,12 @@ async def kakao_skill(request: Request):
                 "outputs": []
             }
         }
-
-    # '/'가 있는 경우에만 기존 시세 검색 로직 실행
+    
     utterance = clean_item_name(raw_utterance)
 
     soul_stones = ["야생의 영혼석", "삼림의 영혼석", "공명의 영혼석", "파동의 영혼석", "망령의 영혼석", "원념의 영혼석"]
     magic_stones = ["허상의 마력석", "포식의 마력석", "심해의 마력석"]
-
+    
     remnant_weapons = [
         "잔영의 숏소드", "잔영의 숏보우", "잔영의 우드 완드", "잔영의 마블 힐링 완드", "잔영의 플랫대거",
         "잔영의 켈틱 류트", "잔영의 크리스탈 스태프", "잔영의 그레이드 소드", "잔영의 라이트 롱보우",
@@ -173,7 +174,6 @@ async def kakao_skill(request: Request):
     ]
     abyssal_accs = ["해연의 페리도트 링", "해연의 페리도트 네크리스"]
 
-    # 키워드 처리 분기
     if utterance in ["잔영 무기", "잔영무기"]:
         reply_text = await fetch_group_item_summary("잔영 무기 시세", remnant_weapons)
     elif utterance in ["잔영 방어", "잔영방어"]:
