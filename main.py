@@ -16,7 +16,8 @@ def get_headers():
     }
 
 def clean_item_name(text: str) -> str:
-    cleaned = text.replace("/시세", "").replace("ZZ", "").replace("zz", "").strip()
+    # 명령어 / 및 ZZ, /시세 등 정리
+    cleaned = text.replace("/시세", "").replace("/", "").replace("ZZ", "").replace("zz", "").strip()
     return cleaned
 
 # 현재 한국 시간(KST)을 "오후 2:53" 형식으로 변환하는 함수
@@ -128,11 +129,22 @@ async def fetch_group_item_summary(group_title: str, item_list: list) -> str:
 async def kakao_skill(request: Request):
     payload = await request.json()
     raw_utterance = payload.get("userRequest", {}).get("utterance", "").strip()
+
+    # 💡 핵심: 입력한 메시지에 '/'가 포함되어 있지 않다면 스킬을 작동시키지 않음
+    if "/" not in raw_utterance:
+        return {
+            "version": "2.0",
+            "template": {
+                "outputs": []
+            }
+        }
+
+    # '/'가 있는 경우에만 기존 시세 검색 로직 실행
     utterance = clean_item_name(raw_utterance)
 
     soul_stones = ["야생의 영혼석", "삼림의 영혼석", "공명의 영혼석", "파동의 영혼석", "망령의 영혼석", "원념의 영혼석"]
     magic_stones = ["허상의 마력석", "포식의 마력석", "심해의 마력석"]
-    
+
     remnant_weapons = [
         "잔영의 숏소드", "잔영의 숏보우", "잔영의 우드 완드", "잔영의 마블 힐링 완드", "잔영의 플랫대거",
         "잔영의 켈틱 류트", "잔영의 크리스탈 스태프", "잔영의 그레이드 소드", "잔영의 라이트 롱보우",
@@ -170,7 +182,7 @@ async def kakao_skill(request: Request):
         reply_text = await fetch_group_item_summary("해연/잔영 악세서리 시세", list(set(remnant_accs + abyssal_accs)))
     elif utterance in ["해연 무기", "해연무기"]:
         reply_text = await fetch_group_item_summary("해연 무기 시세", abyssal_weapons)
-    elif utterance in ["해연 방어", "해연방어"]:
+    elif utterance in ["해연 방어", "해연방어", "해연"]:
         reply_text = await fetch_group_item_summary("해연 방어구 시세", abyssal_armors)
     elif utterance in ["해연 투구", "해연투구"]:
         items = ["해연의 비늘 갑옷 투구", "해연의 가죽 갑옷 투구", "해연의 전투복 투구"]
@@ -191,7 +203,7 @@ async def kakao_skill(request: Request):
         reply_text = await fetch_group_item_summary("영혼석 시세", soul_stones)
     elif utterance in ["마력석"]:
         reply_text = await fetch_group_item_summary("마력석 시세", magic_stones)
-    elif utterance in ["마력석/영혼석", "영혼석/마력석"]:
+    elif utterance in ["마력석영혼석", "영혼석마력석"]:
         reply_text = await fetch_group_item_summary("마력석/영혼석 시세", magic_stones + soul_stones)
     elif utterance in ["용비늘"]:
         reply_text = await fetch_single_item_detail("마력 깃든 용비늘")
