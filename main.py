@@ -27,8 +27,8 @@ def get_current_kst_time() -> str:
     if hour_12 == 0:
         hour_12 = 12
     return f"{ampm} {hour_12}:{now.minute:02d}"
-    
-# 단일 아이템 API 요청 전용 (개수 표기 제거)
+
+# 단일 아이템 API 요청 전용 (그룹 조회용 - 개수 제거)
 async def fetch_single_price(client: httpx.AsyncClient, item_name: str) -> str:
     headers = get_headers()
     try:
@@ -42,7 +42,6 @@ async def fetch_single_price(client: httpx.AsyncClient, item_name: str) -> str:
             if items:
                 target = items[0]
                 min_price = target.get("min_price", 0)
-                # '/ 0개 남음' 부분 제거
                 return f"  :: {item_name}: {min_price:,} 데카"
             else:
                 return f"  :: {item_name}: 정보 없음"
@@ -63,12 +62,12 @@ async def fetch_group_item_summary(group_title: str, item_list: list) -> str:
     return (
         f"[{group_title}]\n"
         f"Data based on 모비라이프 OpenAPI\n\n"
-        f"💰 최저가 검색\n" # '최저가/등록개수' -> '최저가'로 변경
+        f"💰 최저가 검색\n"
         f"{lines}\n\n"
         f"🕒 서버 데이터 갱신 시간: {current_time}"
     )
 
-# 단일 아이템 상세 시세
+# 단일 아이템 상세 시세 (용비늘 등 개별 조회용)
 async def fetch_single_item_detail(item_name: str) -> str:
     headers = get_headers()
     target_name = clean_item_name(item_name)
@@ -116,7 +115,7 @@ async def fetch_single_item_detail(item_name: str) -> str:
             return (
                 f"🔍 [{name} 실시간 시세]\n\n"
                 f"💰 현재 최저가: {min_price:,} 데카\n"
-                f"📦 등록 수량: {count:,}개 남음\n\n"
+                f"📦 등록 수량: {count:,}개\n\n"
                 f"📈 가격 변동률:\n"
                 f"- 1시간 전 대비: {pct_1h:+.1f}%\n"
                 f"- 24시간 전 대비: {pct_24h:+.1f}%"
@@ -131,7 +130,7 @@ async def kakao_skill(request: Request):
     payload = await request.json()
     raw_utterance = payload.get("userRequest", {}).get("utterance", "").strip()
     
-    # '/' 명령어가 없는 일상 대화는 무시
+    # '/'가 없는 일상 대화는 무시
     if "/" not in raw_utterance:
         return {
             "version": "2.0",
@@ -145,11 +144,12 @@ async def kakao_skill(request: Request):
     soul_stones = ["야생의 영혼석", "삼림의 영혼석", "공명의 영혼석", "파동의 영혼석", "망령의 영혼석", "원념의 영혼석"]
     magic_stones = ["허상의 마력석", "포식의 마력석", "심해의 마력석"]
     
+    # 수정된 오타 반영 목록
     remnant_weapons = [
-        "잔영의 숏소드", "잔영의 숏보우", "잔영의 우드 완드", "잔영의 마블 힐링 완드", "잔영의 플랫대거",
-        "잔영의 켈틱 류트", "잔영의 크리스탈 스태프", "잔영의 그레이드 소드", "잔영의 라이트 롱보우",
-        "잔영의 스노우 오브", "잔영의 듀얼소드", "잔영의 라우드헤드 케인", "잔영의 라운드 코일",
-        "잔영의 서펜트 의식용 단검", "잔영의 블런트 쿼터스태프", "잔영의 론 엣지소드", "잔영의 크로스보우",
+        "잔영의 숏소드", "잔영의 숏보우", "잔영의 우드 완드", "잔영의 마블 힐링 완드", "잔영의 플랫 대거",
+        "잔영의 켈틱 류트", "잔영의 크리스탈 스태프", "잔영의 그레이트 소드", "잔영의 라이트 롱보우",
+        "잔영의 스노우 오브", "잔영의 듀얼 소드", "잔영의 라운드헤드 케인", "잔영의 라운드 코일",
+        "잔영의 서펜트 의식용 단검", "잔영의 블런트 쿼터스태프", "잔영의 론 엣지소드", "잔영의 크로스 보우",
         "잔영의 꽃잎 접부채", "잔영의 커브드 하프", "잔영의 라이트 너클", "잔영의 라이트 핼버드"
     ]
     remnant_armors = [
@@ -159,11 +159,12 @@ async def kakao_skill(request: Request):
     ]
     remnant_accs = ["잔영의 페리도트 링", "잔영의 페리도트 네크리스"]
 
+    # 수정된 오타 반영 목록
     abyssal_weapons = [
-        "해연의 숏소드", "해연의 숏보우", "해연의 우드 완드", "해연의 마블 힐링 완드", "해연의 플랫대거",
-        "해연의 켈틱 류트", "해연의 크리스탈 스태프", "해연의 그레이드 소드", "해연의 라이트 롱보우",
-        "해연의 스노우 오브", "해연의 듀얼소드", "해연의 라우드헤드 케인", "해연의 라운드 코일",
-        "해연의 서펜트 의식용 단검", "해연의 블런트 쿼터스태프", "해연의 론 엣지소드", "해연의 크로스보우",
+        "해연의 숏소드", "해연의 숏보우", "해연의 우드 완드", "해연의 마블 힐링 완드", "해연의 플랫 대거",
+        "해연의 켈틱 류트", "해연의 크리스탈 스태프", "해연의 그레이트 소드", "해연의 라이트 롱보우",
+        "해연의 스노우 오브", "해연의 듀얼 소드", "해연의 라운드헤드 케인", "해연의 라운드 코일",
+        "해연의 서펜트 의식용 단검", "해연의 블런트 쿼터스태프", "해연의 론 엣지소드", "해연의 크로스 보우",
         "해연의 꽃잎 접부채", "해연의 커브드 하프", "해연의 라이트 너클", "해연의 라이트 핼버드"
     ]
     abyssal_armors = [
